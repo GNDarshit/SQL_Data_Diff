@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SQL Diff — Data Comparison Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#09090f;--s1:#0f1117;--s2:#161b26;--s3:#1c2235;--s4:#202840;
+  --b1:#1e2640;--b2:#28305a;
+  --ac:#4f8ef7;--ac2:#7c5cfc;
+  --add:#22c55e;--add-bg:rgba(34,197,94,.13);--add-border:rgba(34,197,94,.35);
+  --del:#ef4444;--del-bg:rgba(239,68,68,.13);--del-border:rgba(239,68,68,.35);
+  --warn:#f59e0b;--warn-bg:rgba(245,158,11,.13);--warn-border:rgba(245,158,11,.35);
+  --same:#4a5270;--same-bg:rgba(74,82,112,.1);
+  --t1:#eceef5;--t2:#8891aa;--t3:#4a5270;
+  --mono:'JetBrains Mono',monospace;--sans:'Syne',sans-serif;--r:8px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--t1);min-height:100vh;line-height:1.6;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(79,142,247,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,247,.025) 1px,transparent 1px);background-size:44px 44px;pointer-events:none;z-index:0}
+.app{position:relative;z-index:1;max-width:1600px;margin:0 auto;padding:0 24px 80px}
+
+/* Header */
+header{padding:22px 0 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b1);margin-bottom:22px}
+.logo{display:flex;align-items:center;gap:13px}
+.logo-ico{width:40px;height:40px;background:linear-gradient(135deg,var(--ac),var(--ac2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 0 20px rgba(79,142,247,.35)}
+.logo-name{font-size:21px;font-weight:800;letter-spacing:-.5px}.logo-name span{color:var(--ac)}
+.logo-sub{font-size:10px;color:var(--t3);font-family:var(--mono);letter-spacing:2px;text-transform:uppercase}
+.conn-badge{display:flex;align-items:center;gap:8px;background:var(--s1);border:1px solid var(--b1);padding:6px 14px;border-radius:20px;font-size:12px;color:var(--t2);font-family:var(--mono)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--t3);transition:background .3s}
+.dot.ok{background:var(--add);box-shadow:0 0 8px var(--add)}.dot.err{background:var(--del);box-shadow:0 0 8px var(--del)}
+
+/* Tabs */
+.tabbar{display:flex;gap:0;border-bottom:1px solid var(--b1);margin-bottom:22px;overflow-x:auto}
+.tab{padding:9px 18px;font-size:12px;cursor:pointer;background:transparent;border:none;color:var(--t3);font-family:var(--mono);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s;white-space:nowrap}
+.tab.on{color:var(--ac);border-bottom-color:var(--ac)}
+.tab-badge{background:var(--ac);color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:5px;vertical-align:middle}
+.tab-badge.warn{background:var(--warn);color:#000}
+
+/* Panel */
+.panel{background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:22px;margin-bottom:18px;position:relative;overflow:hidden}
+.panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--ac),var(--ac2),transparent);opacity:.5}
+.ptitle{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--t3);margin-bottom:16px;font-family:var(--mono);display:flex;align-items:center;gap:8px}
+.ptitle::before{content:'//';color:var(--ac)}
+
+/* Form */
+label{display:block;font-size:12px;color:var(--t2);margin-bottom:5px;font-family:var(--mono)}
+input,textarea,select{width:100%;background:var(--s2);border:1px solid var(--b1);color:var(--t1);padding:9px 13px;border-radius:var(--r);font-family:var(--mono);font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s;resize:vertical}
+input[type=password]{padding-right:40px}
+input:focus,textarea:focus,select:focus{border-color:var(--ac);box-shadow:0 0 0 3px rgba(79,142,247,.12)}
+textarea{min-height:88px}
+select option{background:var(--s2)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px}
+.fg{display:flex;flex-direction:column}
+.iw{position:relative}.iw input{padding-right:40px}
+.eye{position:absolute;right:9px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;padding:3px}.eye:hover{color:var(--t2)}
+
+/* Toggle */
+.tgl-row{display:flex;align-items:center;gap:9px}
+.tgl{position:relative;width:36px;height:19px;flex-shrink:0}
+.tgl input{opacity:0;width:0;height:0}
+.tgl-sl{position:absolute;inset:0;background:var(--b2);border-radius:20px;cursor:pointer;transition:.2s}
+.tgl-sl::before{content:'';position:absolute;width:13px;height:13px;left:3px;top:3px;background:var(--t3);border-radius:50%;transition:.2s}
+.tgl input:checked+.tgl-sl{background:var(--ac)}.tgl input:checked+.tgl-sl::before{transform:translateX(17px);background:#fff}
+.tgl-label{font-size:12px;color:var(--t2);font-family:var(--mono);cursor:pointer}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 18px;border-radius:var(--r);border:none;cursor:pointer;font-family:var(--sans);font-size:13px;font-weight:600;transition:all .2s;white-space:nowrap}
+.bp{background:linear-gradient(135deg,var(--ac),var(--ac2));color:#fff;box-shadow:0 4px 14px rgba(79,142,247,.3)}
+.bp:hover{transform:translateY(-1px);box-shadow:0 6px 22px rgba(79,142,247,.45)}.bp:active{transform:none}
+.bg{background:var(--s2);border:1px solid var(--b1);color:var(--t2)}.bg:hover{border-color:var(--ac);color:var(--ac)}
+.bsm{padding:6px 13px;font-size:12px}.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+.brow{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:14px}
+
+/* Messages */
+.emsg{font-size:12px;padding:10px 14px;border-radius:var(--r);margin-top:10px;font-family:var(--mono);line-height:1.8}
+.emsg.err{background:var(--del-bg);border:1px solid var(--del-border);color:var(--del)}
+.emsg.ok{background:var(--add-bg);border:1px solid var(--add-border);color:var(--add)}
+.emsg.inf{background:rgba(79,142,247,.1);border:1px solid rgba(79,142,247,.3);color:var(--ac)}
+.emsg.warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:var(--warn)}
+
+/* CS box */
+.cs-box{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r);padding:10px 40px 10px 13px;font-family:var(--mono);font-size:12px;color:var(--add);word-break:break-all;margin-top:8px;line-height:1.8;position:relative;min-height:40px}
+.cs-copy{position:absolute;top:7px;right:7px;background:var(--s3);border:1px solid var(--b2);color:var(--t2);border-radius:5px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:var(--mono)}
+.cs-copy:hover{color:var(--ac)}
+
+/* Stats row */
+.sgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px}
+.sc{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:14px 16px}
+.sl{font-size:10px;color:var(--t3);font-family:var(--mono);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px}
+.sv{font-size:26px;font-weight:800;line-height:1}
+.sv.ac{color:var(--ac)}.sv.wn{color:var(--warn)}.sv.ad{color:var(--add)}.sv.dl{color:var(--del)}
+
+/* Legend */
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-family:var(--mono);font-size:12px}
+.leg{display:flex;align-items:center;gap:6px;color:var(--t2)}
+.leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+
+/* ═══ DIFF GRID ═══════════════════════════════════════════════════════════ */
+.diff-wrap{overflow:auto;border:1px solid var(--b1);border-radius:11px;max-height:680px}
+.diff-table{border-collapse:collapse;font-family:var(--mono);font-size:12px;width:100%}
+
+/* Sticky header */
+.diff-table thead th{
+  position:sticky;top:0;z-index:10;
+  background:var(--s2);padding:8px 12px;
+  text-align:left;font-size:10px;letter-spacing:1.5px;
+  text-transform:uppercase;color:var(--t3);font-weight:700;
+  border-bottom:1px solid var(--b1);border-right:1px solid var(--b1);
+  white-space:nowrap;
+}
+.diff-table thead th.col-head{
+  position:sticky;top:0;left:auto;z-index:10;min-width:130px;max-width:200px;
+}
+/* Row-label column (sticky left) */
+.diff-table th.row-label{
+  position:sticky;left:0;z-index:11;
+  background:var(--s2);
+  padding:8px 12px;min-width:60px;max-width:80px;
+  text-align:center;font-size:11px;color:var(--t2);
+  border-right:2px solid var(--b2);border-bottom:1px solid var(--b1);
+  white-space:nowrap;font-weight:700;
+}
+/* top-left corner cell */
+.diff-table th.corner{
+  position:sticky;left:0;top:0;z-index:12;
+  background:var(--s3);
+  border-right:2px solid var(--b2);border-bottom:1px solid var(--b1);
+  font-size:10px;color:var(--t3);padding:8px 10px;
+}
+
+/* Data cells */
+.diff-table td{
+  padding:7px 11px;
+  border-right:1px solid var(--b1);border-bottom:1px solid var(--b1);
+  vertical-align:top;min-width:120px;max-width:220px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12px;
+}
+.diff-table td:hover{white-space:normal;max-width:none;z-index:3;position:relative}
+.diff-table tr:last-child td{border-bottom:none}
+
+/* Cell color states */
+.diff-table td.c-same{background:transparent;color:var(--t2)}
+.diff-table td.c-changed{background:var(--warn-bg);border-color:var(--warn-border);color:var(--t1)}
+.diff-table td.c-null{background:var(--same-bg);color:var(--t3);font-style:italic}
+/* Row separator between groups */
+.diff-table tr.row-sep td,.diff-table tr.row-sep th{border-top:2px solid var(--b2)}
+
+/* Changed cell inner layout */
+.cell-vals{display:flex;flex-direction:column;gap:2px}
+.cv-old{color:var(--del);text-decoration:line-through;font-size:11px;display:block}
+.cv-new{color:var(--add);font-size:12px;display:block}
+.cv-same{color:var(--t2)}
+
+/* Row header colors */
+.rh-a{background:var(--s3)!important;color:var(--ac)!important}
+.rh-b{background:var(--s4)!important;color:var(--add)!important}
+
+/* Toolbar */
+.tbar{display:flex;gap:9px;align-items:center;margin-bottom:13px;flex-wrap:wrap}
+.sw{position:relative;flex:1;min-width:160px}.sw input{padding-left:32px}
+.si{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--t3);font-size:12px;pointer-events:none}
+
+/* Raw table */
+.raw-table th{background:var(--s2);padding:8px 12px;text-align:left;font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--t3);font-weight:700;border-bottom:1px solid var(--b1);white-space:nowrap;position:sticky;top:0;z-index:2}
+.raw-table td{padding:7px 12px;border-bottom:1px solid var(--b1);color:var(--t2);font-size:12px;font-family:var(--mono);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.raw-table td:hover{white-space:normal}
+.raw-table tr:hover td{background:var(--s2)}
+.raw-table tr:last-child td{border-bottom:none}
+.rn{color:var(--t3)!important;font-size:10px!important;text-align:right!important;padding-right:8px!important;border-right:1px solid var(--b1)!important;width:36px}
+
+/* Pager */
+.pager{display:flex;align-items:center;gap:5px;justify-content:center;padding:11px 0;border-top:1px solid var(--b1)}
+.pb{min-width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--s2);border:1px solid var(--b1);color:var(--t2);border-radius:5px;cursor:pointer;font-size:12px;font-family:var(--mono);transition:all .15s}
+.pb:hover{border-color:var(--ac);color:var(--ac)}.pb.on{background:var(--ac);border-color:var(--ac);color:#fff}.pb:disabled{opacity:.3;cursor:not-allowed}
+.pi{font-size:11px;color:var(--t3);font-family:var(--mono);padding:0 5px}
+
+/* Misc */
+.spinner{width:15px;height:15px;border:2px solid var(--b2);border-top-color:var(--ac);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+.empty-state{text-align:center;padding:50px 20px;color:var(--t3);font-family:var(--mono);font-size:13px}
+.empty-state .ei{font-size:40px;margin-bottom:12px;opacity:.2}
+#toast{position:fixed;bottom:22px;right:22px;z-index:999;background:var(--s2);border:1px solid var(--b2);color:var(--t1);padding:11px 16px;border-radius:10px;font-family:var(--mono);font-size:13px;box-shadow:0 8px 32px rgba(0,0,0,.5);transform:translateY(80px);opacity:0;transition:all .3s;max-width:440px}
+#toast.show{transform:translateY(0);opacity:1}
+code{background:var(--s3);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:12px}
+.divider{height:1px;background:var(--b1);margin:16px 0}
+@media(max-width:768px){.g2,.g3,.g4{grid-template-columns:1fr}.sgrid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="logo">
+    <div class="logo-ico">⚡</div>
+    <div>
+      <div class="logo-name">SQL<span>Diff</span></div>
+      <div class="logo-sub">Data Comparison Engine</div>
+    </div>
+  </div>
+  <div class="conn-badge">
+    <div class="dot" id="dot"></div>
+    <span id="connTxt">Not connected</span>
+  </div>
+</header>
+
+<div class="tabbar">
+  <button class="tab on"  id="t-builder" onclick="switchTab('builder')">🔧 Connection Builder</button>
+  <button class="tab"     id="t-query"   onclick="switchTab('query')">📝 Query</button>
+  <button class="tab"     id="t-raw"     onclick="switchTab('raw')">🗃 Raw Data<span id="rawBadge" class="tab-badge" style="display:none"></span></button>
+  <button class="tab"     id="t-diff"    onclick="switchTab('diff')">🔍 Diff View<span id="diffBadge" class="tab-badge warn" style="display:none"></span></button>
+</div>
+
+<!-- ══ CONNECTION BUILDER ════════════════════════════════════════════════════ -->
+<div id="tab-builder">
+  <div class="panel">
+    <div class="ptitle">Connection Builder</div>
+    <div class="g2" style="margin-bottom:14px">
+      <div class="fg"><label>Server / Host</label><input type="text" id="b_server" placeholder="localhost  or  192.168.1.10" oninput="buildConn()"/></div>
+      <div class="fg"><label>Database</label><input type="text" id="b_db" placeholder="MyDatabase" oninput="buildConn()"/></div>
+    </div>
+    <div class="g4" style="margin-bottom:14px">
+      <div class="fg"><label>Username</label><input type="text" id="b_uid" placeholder="sa" oninput="buildConn()"/></div>
+      <div class="fg"><label>Password</label><div class="iw"><input type="password" id="b_pwd" placeholder="••••••••" oninput="buildConn()"/><button class="eye" onclick="tp('b_pwd')">👁</button></div></div>
+      <div class="fg"><label>Port</label><input type="text" id="b_port" placeholder="1433" oninput="buildConn()"/></div>
+      <div class="fg"><label>Named Instance</label><input type="text" id="b_inst" placeholder="SQLEXPRESS" oninput="buildConn()"/></div>
+    </div>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:14px">
+      <label class="tgl-row" style="margin:0"><div class="tgl"><input type="checkbox" id="b_trust" checked onchange="buildConn()"><div class="tgl-sl"></div></div><span class="tgl-label">Trust Server Certificate</span></label>
+      <label class="tgl-row" style="margin:0"><div class="tgl"><input type="checkbox" id="b_enc" checked onchange="buildConn()"><div class="tgl-sl"></div></div><span class="tgl-label">Encrypt</span></label>
+      <label class="tgl-row" style="margin:0"><div class="tgl"><input type="checkbox" id="b_win" onchange="toggleWin()"><div class="tgl-sl"></div></div><span class="tgl-label">Windows Auth</span></label>
+    </div>
+    <label>Generated Connection String</label>
+    <div class="cs-box" id="genCS"><span style="color:var(--t3)">Fill in Server and Database above…</span></div>
+    <div class="brow">
+      <button class="btn bp" onclick="useAndTest()">🔌 Test Connection</button>
+      <button class="btn bg bsm" onclick="useAndGo()">▶ Go to Query →</button>
+    </div>
+    <div id="bMsg"></div>
+  </div>
+  <div class="panel" style="border-color:rgba(79,142,247,.3)">
+    <div class="ptitle">Or paste an existing connection string</div>
+    <div class="fg" style="margin-bottom:12px">
+      <label>Any format accepted — ADO.NET, ODBC, mixed aliases</label>
+      <div class="iw"><input type="password" id="connStr" placeholder='Server=myServer;Database=myDB;User Id=myUser;Password=myPass;' autocomplete="off"/><button class="eye" onclick="tp('connStr')">👁</button></div>
+    </div>
+    <div class="brow">
+      <button class="btn bg bsm" onclick="testConn()">🔌 Test</button>
+      <button class="btn bg bsm" onclick="usePastedAndGo()">▶ Use &amp; Go to Query</button>
+    </div>
+    <div id="cMsg"></div>
+    <div class="divider"></div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--t3);line-height:2.2">
+      <code style="color:var(--ac2)">Server=host;Database=db;User Id=user;Password=pass;</code><br>
+      <code style="color:var(--ac2)">Server=host\SQLEXPRESS;Database=db;User Id=user;Password=pass;</code>
+    </div>
+  </div>
+</div>
+
+<!-- ══ QUERY ════════════════════════════════════════════════════════════════ -->
+<div id="tab-query" style="display:none">
+  <div class="panel">
+    <div class="ptitle">Query Settings</div>
+    <div class="fg" style="margin-bottom:14px">
+      <label>Active Connection <span id="csPreview" style="color:var(--add);margin-left:6px;font-size:11px"></span></label>
+      <div class="iw"><input type="password" id="qCS" placeholder="Set in Connection Builder tab" autocomplete="off"/><button class="eye" onclick="tp('qCS')">👁</button></div>
+    </div>
+    <div class="fg" style="margin-bottom:14px">
+      <label>SQL Query <span style="color:var(--t3)">(SELECT only — all rows returned will be compared against each other)</span></label>
+      <textarea id="sqlQ" rows="5" placeholder="SELECT * FROM LOJ_FEE_FeePosting WITH(NOLOCK) WHERE FeePostingID = 463540 ORDER BY 1 DESC"></textarea>
+    </div>
+    <div class="g2" style="margin-bottom:4px">
+      <div class="fg">
+        <label>Compare By (group column) <span style="color:var(--t3)">— optional</span></label>
+        <input type="text" id="pkCol" placeholder="e.g. FeePostingID — leave blank to compare all rows together"/>
+        <span style="font-size:11px;color:var(--t3);font-family:var(--mono);margin-top:4px">If set, rows with the same value in this column are compared against each other</span>
+      </div>
+      <div class="fg">
+        <label>Sort By Column <span style="color:var(--t3)">— optional</span></label>
+        <input type="text" id="tsCol" placeholder="e.g. ModifiedDate — sorts rows before comparing"/>
+        <span style="font-size:11px;color:var(--t3);font-family:var(--mono);margin-top:4px">Helps see chronological changes when comparing audit rows</span>
+      </div>
+    </div>
+    <div class="brow">
+      <button class="btn bp" onclick="runQuery()" id="runBtn">▶ Fetch &amp; Compare</button>
+      <button class="btn bg bsm" onclick="switchTab('builder')">← Connection Builder</button>
+    </div>
+    <div id="qMsg"></div>
+  </div>
+</div>
+
+<!-- ══ RAW DATA ══════════════════════════════════════════════════════════════ -->
+<div id="tab-raw" style="display:none">
+  <div id="rawEmpty" class="empty-state"><div class="ei">🗃</div><p>Fetch a query to see raw data here.</p></div>
+  <div id="rawSection" style="display:none">
+    <div class="panel" style="padding:14px 18px;margin-bottom:13px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div style="font-family:var(--mono);font-size:13px;color:var(--t2)">
+          <strong style="color:var(--t1)" id="rawCount">0</strong> rows &nbsp;·&nbsp;
+          <span id="rawColInfo" style="color:var(--t3)"></span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bg bsm" onclick="exportRaw()">⬇ Export CSV</button>
+          <button class="btn bg bsm" onclick="switchTab('diff')">→ View Diff</button>
+        </div>
+      </div>
+    </div>
+    <div class="tbar">
+      <div class="sw"><span class="si">🔍</span><input type="text" id="rawSrch" placeholder="Search raw data…" oninput="renderRaw()"/></div>
+    </div>
+    <div style="border:1px solid var(--b1);border-radius:11px;overflow:auto;max-height:560px">
+      <table class="raw-table" style="width:100%;border-collapse:collapse">
+        <thead id="rawHead"></thead>
+        <tbody id="rawBody"></tbody>
+      </table>
+    </div>
+    <div class="pager" id="rawPager"></div>
+  </div>
+</div>
+
+<!-- ══ DIFF VIEW ═════════════════════════════════════════════════════════════ -->
+<div id="tab-diff" style="display:none">
+  <div id="diffEmpty" class="empty-state"><div class="ei">🔍</div><p>Fetch a query to see the diff here.</p></div>
+  <div id="diffSection" style="display:none">
+
+    <!-- Stats -->
+    <div class="sgrid" id="statsGrid">
+      <div class="sc"><div class="sl">Total Rows</div><div class="sv ac" id="sTot">0</div></div>
+      <div class="sc"><div class="sl">Pairs Compared</div><div class="sv" id="sPairs">0</div></div>
+      <div class="sc"><div class="sl">Cells Changed</div><div class="sv wn" id="sCells">0</div></div>
+      <div class="sc"><div class="sl">Cols with Diffs</div><div class="sv" id="sColsD">0</div></div>
+      <div class="sc"><div class="sl">Identical Rows</div><div class="sv ad" id="sSame">0</div></div>
+    </div>
+
+    <!-- Changed Columns List -->
+    <div id="diffColsList" style="display:none; margin-bottom: 14px; padding: 12px 16px; background: var(--warn-bg); border: 1px dashed var(--warn-border); border-radius: 10px;">
+      <div style="font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--warn); margin-bottom: 6px; font-family: var(--mono);">Col(s) with Differences</div>
+      <div id="diffColsNames" style="font-size: 12px; font-family: var(--mono); color: var(--t1); line-height: 2; word-wrap: break-word;"></div>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="leg"><div class="leg-dot" style="background:var(--warn-bg);border:1px solid var(--warn-border)"></div>Cell value differs</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--del-bg);border:1px solid var(--del-border)"></div>Old value (struck)</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--add-bg);border:1px solid var(--add-border)"></div>New value</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--same-bg);border:1px solid var(--b1)"></div>Same / unchanged</div>
+      <div class="leg"><div class="leg-dot" style="background:var(--s3);border:1px solid var(--b2)"></div>NULL</div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="tbar">
+      <div class="sw"><span class="si">🔍</span><input type="text" id="diffSrch" placeholder="Filter by value…" oninput="renderDiff()"/></div>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--t2);font-size:12px;cursor:pointer">
+        <input type="checkbox" id="onlyDiff" onchange="renderDiff()" style="width:auto;padding:0;margin:0"/> Changed pairs only
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;margin:0;color:var(--t2);font-size:12px;cursor:pointer">
+        <input type="checkbox" id="onlyDiffCols" checked onchange="renderDiff()" style="width:auto;padding:0;margin:0"/> Diff columns only
+      </label>
+      <button class="btn bg bsm" onclick="exportDiffCSV()">⬇ Export Diff CSV</button>
+    </div>
+
+    <!-- The diff grid -->
+    <div class="diff-wrap" id="diffWrap">
+      <table class="diff-table" id="diffTable">
+        <thead id="diffHead"></thead>
+        <tbody id="diffBody"></tbody>
+      </table>
+    </div>
+    <div class="pager" id="diffPager"></div>
+  </div>
+</div>
+
+</div>
+<div id="toast"></div>
+
+<script>
+const API = () => 'http://localhost:5000';
+let activeCS = '';
+let G = { rows:[], cols:[], pairs:[], filteredPairs:[], diffCols:[] };
+let rawPage = 1, diffPage = 1;
+const PG = 30;
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(t) {
+  ['builder','query','raw','diff'].forEach(id=>{
+    document.getElementById('tab-'+id).style.display = id===t?'block':'none';
+    document.getElementById('t-'+id).classList.toggle('on',id===t);
+  });
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const fmtV = v => v===null||v===undefined ? '<span style="color:var(--t3);font-style:italic">NULL</span>' : esc(String(v));
+
+function toast(msg,type='') {
+  const t=document.getElementById('toast');
+  t.textContent=msg;
+  t.style.borderColor=type==='err'?'rgba(239,68,68,.5)':type==='ok'?'rgba(34,197,94,.5)':'var(--b2)';
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3500);
+}
+function showMsg(id,html,type) {
+  const el=document.getElementById(id);
+  el.innerHTML = html?`<div class="emsg ${type}">${html}</div>`:'';
+}
+function tp(id){const i=document.getElementById(id);i.type=i.type==='password'?'text':'password';}
+function toggleWin(){const on=document.getElementById('b_win').checked;['b_uid','b_pwd'].forEach(id=>document.getElementById(id).disabled=on);buildConn();}
+function setActiveCS(cs){
+  activeCS=cs;
+  document.getElementById('qCS').value=cs;
+  document.getElementById('csPreview').textContent=cs?'✓ set':'';
+}
+
+// ── Builder ───────────────────────────────────────────────────────────────────
+function buildConn(){
+  const srv=document.getElementById('b_server').value.trim();
+  const db=document.getElementById('b_db').value.trim();
+  const uid=document.getElementById('b_uid').value.trim();
+  const pwd=document.getElementById('b_pwd').value;
+  const port=document.getElementById('b_port').value.trim();
+  const inst=document.getElementById('b_inst').value.trim();
+  const trust=document.getElementById('b_trust').checked;
+  const enc=document.getElementById('b_enc').checked;
+  const win=document.getElementById('b_win').checked;
+  if(!srv&&!db){document.getElementById('genCS').innerHTML='<span style="color:var(--t3)">Fill in Server and Database…</span>';document.getElementById('genCS')._raw='';return;}
+  let srvP=srv;if(inst)srvP=`${srv}\\${inst}`;else if(port)srvP=`${srv},${port}`;
+  const parts=[`Driver={ODBC Driver 18 for SQL Server}`,`SERVER=${srvP}`,`DATABASE=${db}`];
+  if(win)parts.push('Trusted_Connection=yes');else parts.push(`UID=${uid}`,`PWD=${pwd}`);
+  parts.push(`Encrypt=${enc?'yes':'no'}`,`TrustServerCertificate=${trust?'yes':'no'}`);
+  const cs=parts.join(';')+';';
+  const masked=cs.replace(/(PWD=)[^;]*/gi,'$1***');
+  document.getElementById('genCS').innerHTML=`<span>${esc(masked)}</span><button class="cs-copy" onclick="copyCS()">Copy</button>`;
+  document.getElementById('genCS')._raw=cs;
+}
+function copyCS(){navigator.clipboard.writeText(document.getElementById('genCS')._raw||'').then(()=>toast('Copied!','ok'));}
+async function useAndTest(){const cs=document.getElementById('genCS')._raw;if(!cs){showMsg('bMsg','Fill in Server and Database first.','err');return;}setActiveCS(cs);document.getElementById('connStr').value=cs;await testWith(cs,'bMsg');}
+function useAndGo(){const cs=document.getElementById('genCS')._raw;if(!cs){showMsg('bMsg','Fill in fields first.','err');return;}setActiveCS(cs);switchTab('query');}
+function usePastedAndGo(){const cs=document.getElementById('connStr').value.trim();if(cs)setActiveCS(cs);switchTab('query');}
+async function testConn(){const cs=document.getElementById('connStr').value.trim();if(!cs){showMsg('cMsg','Enter a connection string.','err');return;}await testWith(cs,'cMsg');}
+async function testWith(cs,msgId){
+  showMsg(msgId,'<span class="spinner"></span> Testing…','inf');
+  try{
+    const r=await fetch(`${API()}/api/test-connection`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connectionString:cs})});
+    const d=await r.json();
+    if(d.success){
+      showMsg(msgId,`✅ ${esc(d.message)}<br><span style="color:var(--t3);font-size:11px">${esc(d.normalizedString||'')}</span>`,'ok');
+      document.getElementById('dot').className='dot ok';
+      document.getElementById('connTxt').textContent='Connected';
+      setActiveCS(cs);
+    }else{
+      let h=`❌ ${esc(d.error)}`;if(d.hint)h+=`<br>💡 ${esc(d.hint)}`;if(d.normalizedString)h+=`<br><span style="color:var(--t3);font-size:11px">Tried: ${esc(d.normalizedString)}</span>`;
+      showMsg(msgId,h,'err');document.getElementById('dot').className='dot err';
+    }
+  }catch(e){showMsg(msgId,'❌ Cannot reach backend — run: <code>python server.py</code>','err');}
+}
+
+// ── Run Query ─────────────────────────────────────────────────────────────────
+async function runQuery(){
+  const cs=document.getElementById('qCS').value.trim()||activeCS;
+  const q=document.getElementById('sqlQ').value.trim();
+  if(!cs){showMsg('qMsg','No connection — set it in Connection Builder.','err');return;}
+  if(!q){showMsg('qMsg','Enter a SQL query.','err');return;}
+
+  const btn=document.getElementById('runBtn');
+  btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Fetching…';
+  showMsg('qMsg','','');
+
+  try{
+    const r=await fetch(`${API()}/api/query`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({connectionString:cs,query:q})});
+    const d=await r.json();
+    if(!r.ok){let h=`❌ ${esc(d.error||'Error')}`;if(d.hint)h+=`<br>💡 ${esc(d.hint)}`;showMsg('qMsg',h,'err');return;}
+
+    G.rows=d.rows||[];G.cols=d.columns||[];
+    if(!G.rows.length){showMsg('qMsg','⚠ Query returned 0 rows. Check your WHERE clause.','warn');return;}
+
+    // Sort if timestamp column given
+    const ts=document.getElementById('tsCol').value.trim();
+    if(ts&&G.cols.includes(ts))G.rows.sort((a,b)=>String(a[ts]??'').localeCompare(String(b[ts]??'')));
+
+    // Build comparison pairs
+    buildPairs();
+
+    // Update badges
+    document.getElementById('rawBadge').style.display='inline';document.getElementById('rawBadge').textContent=G.rows.length;
+    document.getElementById('diffBadge').style.display='inline';document.getElementById('diffBadge').textContent=G.pairs.filter(p=>p.hasDiff).length+' diffs';
+
+    // Render both tabs
+    rawPage=1;diffPage=1;
+    renderRaw();renderDiff();
+    document.getElementById('rawSection').style.display='block';document.getElementById('rawEmpty').style.display='none';
+    document.getElementById('diffSection').style.display='block';document.getElementById('diffEmpty').style.display='none';
+    document.getElementById('dot').className='dot ok';document.getElementById('connTxt').textContent='Connected';
+    showMsg('qMsg',`✅ Fetched <strong>${G.rows.length} rows</strong> · <strong>${G.pairs.length} comparison pairs</strong> built · <strong>${G.pairs.filter(p=>p.hasDiff).length}</strong> have differences`,'ok');
+    switchTab('diff');
+    toast(`${G.rows.length} rows fetched, ${G.pairs.filter(p=>p.hasDiff).length} pairs differ`,'ok');
+
+  }catch(e){showMsg('qMsg','❌ Cannot reach backend — run: <code>python server.py</code>','err');}
+  finally{btn.disabled=false;btn.innerHTML='▶ Fetch &amp; Compare';}
+}
+
+// ── Build Pairs ───────────────────────────────────────────────────────────────
+// Compare EVERY consecutive pair within each group (or all rows if no group col)
+function buildPairs(){
+  const pk=document.getElementById('pkCol').value.trim();
+  G.pairs=[];
+
+  let groups; // array of arrays
+  if(pk && G.cols.includes(pk)){
+    // Group by pk value, then compare all consecutive pairs within each group
+    const map={};
+    G.rows.forEach((r,i)=>{const k=String(r[pk]??'');(map[k]=map[k]||[]).push({row:r,idx:i});});
+    groups=Object.values(map).map(g=>g.map(x=>x));
+  } else {
+    // No grouping: treat all rows as one group, compare every consecutive pair
+    groups=[G.rows.map((r,i)=>({row:r,idx:i}))];
+  }
+
+  groups.forEach(grp=>{
+    // Compare row[0] vs row[1], row[1] vs row[2], row[2] vs row[3] ... (sliding window)
+    for(let i=0;i<grp.length-1;i++){
+      const a=grp[i].row, b=grp[i+1].row;
+      const aIdx=grp[i].idx, bIdx=grp[i+1].idx;
+      const cellDiffs={};
+      let hasDiff=false;
+      G.cols.forEach(col=>{
+        const av=a[col]===null||a[col]===undefined?null:String(a[col]);
+        const bv=b[col]===null||b[col]===undefined?null:String(b[col]);
+        if(av!==bv){cellDiffs[col]={from:a[col],to:b[col]};hasDiff=true;}
+      });
+      G.pairs.push({aRow:a,bRow:b,aIdx,bIdx,cellDiffs,hasDiff,pairLabel:`Row ${aIdx+1} vs Row ${bIdx+1}`});
+    }
+  });
+
+  // Stats
+  const totalCellDiffs=G.pairs.reduce((n,p)=>n+Object.keys(p.cellDiffs).length,0);
+  const colsWithDiff=new Set(G.pairs.flatMap(p=>Object.keys(p.cellDiffs)));
+  const samePairs=G.pairs.filter(p=>!p.hasDiff).length;
+  document.getElementById('sTot').textContent=G.rows.length;
+  document.getElementById('sPairs').textContent=G.pairs.length;
+  document.getElementById('sCells').textContent=totalCellDiffs;
+  document.getElementById('sColsD').textContent=colsWithDiff.size;
+  document.getElementById('sSame').textContent=samePairs;
+
+  const diffColsArr = Array.from(colsWithDiff);
+  G.diffCols = diffColsArr;
+  if (diffColsArr.length > 0) {
+    document.getElementById('diffColsList').style.display = 'block';
+    document.getElementById('diffColsNames').innerHTML = diffColsArr.map(c => `<code style="color:var(--warn);border:1px solid var(--warn-border);background:transparent">${esc(c)}</code>`).join(' ');
+  } else {
+    document.getElementById('diffColsList').style.display = 'none';
+  }
+}
+
+// ── Render Diff ───────────────────────────────────────────────────────────────
+function renderDiff(){
+  const q=document.getElementById('diffSrch').value.toLowerCase();
+  const onlyDiff=document.getElementById('onlyDiff').checked;
+  const onlyDiffCols=document.getElementById('onlyDiffCols').checked;
+  
+  // Keep pkCol for context if present and missing from diffCols
+  const pk=document.getElementById('pkCol').value.trim();
+  let renderCols = G.cols;
+  if (onlyDiffCols) {
+    if (pk && G.cols.includes(pk) && !G.diffCols.includes(pk)) renderCols = [pk, ...G.diffCols];
+    else renderCols = G.diffCols;
+  }
+
+  let pairs=[...G.pairs];
+  if(onlyDiff) pairs=pairs.filter(p=>p.hasDiff);
+  if(q) pairs=pairs.filter(p=>
+    renderCols.some(c=>{
+      const av=String(p.aRow[c]??'').toLowerCase();
+      const bv=String(p.bRow[c]??'').toLowerCase();
+      return av.includes(q)||bv.includes(q);
+    })
+  );
+
+  G.filteredPairs=pairs;
+  const total=pairs.length,pages=Math.max(1,Math.ceil(total/PG));
+  diffPage=Math.min(diffPage,pages);
+  const start=(diffPage-1)*PG,slice=pairs.slice(start,start+PG);
+
+  if(!slice.length){
+    document.getElementById('diffHead').innerHTML='';
+    document.getElementById('diffBody').innerHTML=`<tr><td colspan="99" style="padding:40px;text-align:center;color:var(--t3);font-family:var(--mono)">No pairs match the current filter.</td></tr>`;
+    renderDiffPager(total,diffPage,pages);
+    return;
+  }
+
+  // Build column header row
+  document.getElementById('diffHead').innerHTML=
+    `<tr><th class="corner">Pair</th>${renderCols.map(c=>`<th class="col-head">${esc(c)}</th>`).join('')}</tr>`;
+
+  // Build body — two rows per pair (Row A and Row B)
+  let html='';
+  slice.forEach((pair,pi)=>{
+    const isFirst = pi===0;
+    // ── Row A ──
+    html+=`<tr class="${isFirst?'':'row-sep'}">`;
+    html+=`<th class="row-label rh-a" rowspan="2" style="font-size:11px;line-height:1.4">Row&nbsp;${pair.aIdx+1}<br><span style="font-weight:400;color:var(--t3);font-size:10px">(before)</span></th>`;
+    renderCols.forEach(col=>{
+      const diff=pair.cellDiffs[col];
+      const v=pair.aRow[col];
+      if(diff){
+        // Changed — show old value with strikethrough
+        html+=`<td class="c-changed"><span class="cv-old">${fmtV(diff.from)}</span></td>`;
+      } else if(v===null||v===undefined){
+        html+=`<td class="c-null">NULL</td>`;
+      } else {
+        html+=`<td class="c-same"><span class="cv-same">${fmtV(v)}</span></td>`;
+      }
+    });
+    html+='</tr>';
+
+    // ── Row B ──
+    html+='<tr>';
+    renderCols.forEach(col=>{
+      const diff=pair.cellDiffs[col];
+      const v=pair.bRow[col];
+      if(diff){
+        // Changed — show new value highlighted green
+        html+=`<td class="c-changed" style="background:var(--add-bg);border-color:var(--add-border)"><span class="cv-new">${fmtV(diff.to)}</span></td>`;
+      } else if(v===null||v===undefined){
+        html+=`<td class="c-null">NULL</td>`;
+      } else {
+        html+=`<td class="c-same"><span class="cv-same">${fmtV(v)}</span></td>`;
+      }
+    });
+    html+='</tr>';
+
+    // ── Diff summary mini-row ──
+    if(pair.hasDiff){
+      const changedCols=Object.keys(pair.cellDiffs);
+      html+=`<tr>`;
+      html+=`<td style="background:var(--warn-bg);border-top:none;padding:3px 8px;font-size:10px;color:var(--warn);font-family:var(--mono);text-align:center;border-right:2px solid var(--b2)">
+        ${changedCols.length} diff${changedCols.length>1?'s':''}
+      </td>`;
+      renderCols.forEach(col=>{
+        const diff=pair.cellDiffs[col];
+        if(diff){
+          html+=`<td style="background:var(--warn-bg);border-top:none;padding:3px 8px;font-size:10px;color:var(--warn);font-family:var(--mono)">⬆ changed</td>`;
+        } else {
+          html+=`<td style="border-top:none;padding:3px 0;background:transparent"></td>`;
+        }
+      });
+      html+='</tr>';
+    }
+  });
+
+  document.getElementById('diffBody').innerHTML=html;
+  renderDiffPager(total,diffPage,pages);
+}
+
+function renderDiffPager(tot,cur,pages){
+  const pg=document.getElementById('diffPager');
+  if(pages<=1){pg.innerHTML=`<span class="pi">${tot} pairs</span>`;return;}
+  let b=[`<button class="pb" ${cur===1?'disabled':''} onclick="goDiff(${cur-1})">‹</button>`];
+  const show=new Set([1,cur-1,cur,cur+1,pages].filter(p=>p>=1&&p<=pages));
+  let prev=0;
+  [...show].sort((a,c)=>a-c).forEach(p=>{if(prev&&p-prev>1)b.push(`<span class="pi">…</span>`);b.push(`<button class="pb ${p===cur?'on':''}" onclick="goDiff(${p})">${p}</button>`);prev=p;});
+  b.push(`<button class="pb" ${cur===pages?'disabled':''} onclick="goDiff(${cur+1})">›</button>`);
+  b.push(`<span class="pi">${tot} pairs</span>`);
+  pg.innerHTML=b.join('');
+}
+function goDiff(p){diffPage=p;renderDiff();document.getElementById('diffWrap').scrollTop=0;}
+
+// ── Raw Data ──────────────────────────────────────────────────────────────────
+function renderRaw(){
+  const q=document.getElementById('rawSrch').value.toLowerCase();
+  let rows=G.rows;
+  if(q) rows=rows.filter(r=>Object.values(r).some(v=>String(v??'').toLowerCase().includes(q)));
+  const total=rows.length,pages=Math.max(1,Math.ceil(total/PG));
+  rawPage=Math.min(rawPage,pages);
+  const start=(rawPage-1)*PG,slice=rows.slice(start,start+PG);
+  document.getElementById('rawCount').textContent=G.rows.length;
+  document.getElementById('rawColInfo').textContent=`${G.cols.length} columns`;
+  document.getElementById('rawHead').innerHTML=`<tr><th class="rn">#</th>${G.cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>`;
+  document.getElementById('rawBody').innerHTML=slice.map((row,i)=>
+    `<tr><td class="rn">${start+i+1}</td>${G.cols.map(c=>{const v=row[c];return`<td title="${esc(String(v??''))}">${v===null||v===undefined?'<span style="color:var(--t3);font-style:italic">NULL</span>':esc(String(v))}</td>`;}).join('')}</tr>`
+  ).join('');
+  // Pager
+  const pg=document.getElementById('rawPager');
+  if(pages<=1){pg.innerHTML=`<span class="pi">${total} rows</span>`;return;}
+  let b=[`<button class="pb" ${rawPage===1?'disabled':''} onclick="goRaw(${rawPage-1})">‹</button>`];
+  const show=new Set([1,rawPage-1,rawPage,rawPage+1,pages].filter(p=>p>=1&&p<=pages));
+  let prev=0;[...show].sort((a,c)=>a-c).forEach(p=>{if(prev&&p-prev>1)b.push(`<span class="pi">…</span>`);b.push(`<button class="pb ${p===rawPage?'on':''}" onclick="goRaw(${p})">${p}</button>`);prev=p;});
+  b.push(`<button class="pb" ${rawPage===pages?'disabled':''} onclick="goRaw(${rawPage+1})">›</button>`);
+  b.push(`<span class="pi">${total} rows</span>`);
+  pg.innerHTML=b.join('');
+}
+function goRaw(p){rawPage=p;renderRaw();}
+
+// ── Exports ───────────────────────────────────────────────────────────────────
+function exportRaw(){
+  if(!G.rows.length){toast('No data','err');return;}
+  const lines=[G.cols.join(','),...G.rows.map(r=>G.cols.map(c=>`"${String(r[c]??'').replace(/"/g,'""')}"`).join(','))];
+  dl(lines.join('\n'),'raw_data.csv','text/csv');toast('Raw CSV downloaded','ok');
+}
+function exportDiffCSV(){
+  if(!G.filteredPairs.length){toast('No diff data','err');return;}
+  const header=['Pair','Row A #','Row B #',...G.cols.flatMap(c=>[c+' (before)',c+' (after)','Changed?'])];
+  const rows=G.filteredPairs.map(p=>[
+    p.pairLabel, p.aIdx+1, p.bIdx+1,
+    ...G.cols.flatMap(c=>{
+      const diff=p.cellDiffs[c];
+      return diff ? [diff.from??'NULL', diff.to??'NULL','YES'] : [p.aRow[c]??'NULL','','NO'];
+    })
+  ]);
+  const lines=[header,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','));
+  dl(lines.join('\n'),'sql_diff.csv','text/csv');toast('Diff CSV downloaded','ok');
+}
+function dl(content,name,type){const a=document.createElement('a');a.href='data:'+type+';charset=utf-8,'+encodeURIComponent(content);a.download=name;a.click();}
+
+// ── On load ───────────────────────────────────────────────────────────────────
+window.addEventListener('load',async()=>{
+  try{
+    const r=await fetch(`${API()}/api/health`);
+    const d=await r.json();
+    if(d.bestDriver)showMsg('bMsg',`✅ Server ready · driver: <strong>${esc(d.bestDriver)}</strong>`,'ok');
+    else if(d.pyodbc&&(!d.drivers||!d.drivers.length))showMsg('bMsg','⚠ No ODBC driver found. Download: <a href="https://aka.ms/downloadmsodbcsql" target="_blank" style="color:var(--ac)">https://aka.ms/downloadmsodbcsql</a>','warn');
+  }catch(e){}
+});
+</script>
+</body>
+</html>
